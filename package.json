@@ -2,8 +2,11 @@
   "name": "@xaios/process-manage",
   "author": "aizhifeng",
   "description": "通用流程管理",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "index.js",
+  "scripts": {
+    "test": "node test"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/XAIOS/process-manage.git"

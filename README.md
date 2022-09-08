@@ -21,8 +21,7 @@ this.handle_process = new Process('测试流程')
 this.handle_process.Add('步骤 1').Todo(next => {
   // Todo 接收一个函数，唯一参数 next 表示前往下一个步骤
   // 在调用 next 前流程都不会继续，所以步骤中可以进行很多复杂操作，比如接口请求或是等待用户操作
-  next()
-  // 调用时若所在步骤非实际步骤，调用将不会有任何效果，即步骤内重复 next 只有首次生效
+  // 注意不要重复调用 next，避免流程管理错误，确保每个步骤单次执行只调用一个 next
   next()
 })
 
@@ -32,7 +31,12 @@ this.handle_process.Add('步骤 2', false).Todo(async next => {
   // next 的参数如果为 true，表示在进行上一步操作时，可以在此处继续前往上一步操作，比较少用到
   next(true)
 }).Exit(() => {
-  // Todo 后可以调用 Exit，传入一个无参函数，进行离开此步骤时的操作，比如清理一些临时数据
+  // Todo 后可以调用 Exit，传入一个无参函数，定义离开此步骤时的操作，比如清理一些临时数据，关闭一些弹出窗口
+  // Exit 内不应执行与下一步骤有关的操作，如准备下一步骤的数据等，以降低步骤间的耦合程度
+  // Exit 内错误抛出会产生事件，但不会中断流程，将继续执行下一步骤，因此 Exit 内应只执行一些不会出错或出错也没关系的安全逻辑
+  // 若无 Exit，则会直接进入下一步骤，可以传入 async 函数，执行完最后一行语句或 return 时进入下一步骤
+  // Exit 表示的是离开此步骤的操作，所以实际流转的下一步骤可能是上一步也可能是下一步，如不调用 next，不会执行 Exit
+  // 即使步骤发生错误，离开步骤时 Exit 也会调用，但当步骤设为错误中断时不会调用，因为此时流程中断，并未离开步骤
 })
 
 // 步骤定义完后，调用 Run 启动流程开始执行步骤
@@ -55,14 +59,18 @@ this.handle_process.step   // 当前步骤的索引值
 # 事件监听
 
 ```javascript
-this.handle_process.$on('error', (e, step, step_name, process_name) => {
-  // e             // 错误信息对象
-  // step          // 发生错误的步骤索引
-  // step_name     // 发生错误的步骤名称
-  // process_name  // 发生错误的流程名称
+this.handle_process.$on('error', (e, info) => {
+  // e               // 错误信息对象
+  // info.name       // 发生错误的流程名称
+  // info.step       // 发生错误的步骤索引
+  // info.step_name  // 发生错误的步骤名称
+  // info.type       // 发生错误的位置，todo || exit
 })
 
 this.handle_process.$on('update', step => {
-  // step          // 更新后的步骤值，开始运行流程时不会触发事件
+  // step            // 更新后的步骤值，首次启动流程时不会触发此事件
 })
+
+// 也支持自定义事件触发与监听
+// this.handle_process.$emit('', ...params)
 ```

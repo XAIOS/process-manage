@@ -1,74 +1,83 @@
-export default class {
+module.exports = class {
   _step = 0
-  step_list = []
-  event_hub = {}
+  _event_hub = {}
+  _step_list = []
+  _is_forward = true
 
   get step() {
     return this._step
   }
 
-  set step(value) {
-    this._step != value && this.$emit('update', value)
-    this._step = value
+  set step(step) {
+    this._step != step && this.$emit('update', this._step = step)
   }
 
   constructor(name) {
     this.name = name
   }
 
-  Reject(e, reject) {
-    this.$emit('error', e, this.step, this.step_list[this.step].name, this.name)
-    this.step_list[this.step].is_tolerance && reject()
-  }
-
-  Catch(todo, reject) {
-    try {
-      todo()
-    } catch(e) {
-      this.Reject(e, reject)
-    }
-  }
-
-  Next() {
-    if (this.step == this.step_list.length - 1) return
-    this.Catch(() => {
-      this.step_list[this.step].Exit?.()
-      this.step_list[++this.step].Todo()
-    }, () => {
-      this.Next()
+  _EmitError(e, is_exit) {
+    this.$emit('error', e, {
+      name: this.name,
+      step: this.step,
+      step_name: this._step_list[this.step].name,
+      type: is_exit ? 'exit' : 'todo'
     })
   }
 
-  Prev() {
-    if (!this.step) return
-    this.Catch(() => {
-      this.step_list[this.step].Exit?.()
-      this.step_list[--this.step].Todo(true)
-    }, () => {
-      this.Prev()
+  _Exit() {
+    return new Promise(resolve => {
+      if (!this._step_list[this.step].Exit) return resolve()
+
+      try {
+        let result = this._step_list[this.step].Exit()
+        if (result instanceof Promise)
+          result.then(resolve).catch(e => {
+            this._EmitError(e, true)
+            resolve()
+          })
+        else
+          resolve()
+      } catch(e) {
+        this._EmitError(e, true)
+        resolve()
+      }
+    })
+  }
+
+  _Next(is_forward) {
+    this._is_forward = is_forward
+
+    this._Exit().then(() => {
+      let step = this.step + (is_forward ? 1 : -1)
+      if (step == -1 || step == this._step_list.length) return
+
+      this._step_list[this.step = step].Todo()
     })
   }
 
   Add(name, is_tolerance = true) {
     return {
-      Todo: next => {
-        let index = this.step_list.length
-
+      Todo: todo => {
         let step = {
           name,
-          is_tolerance,
-          Todo: is_prev => {
-            let result = next(is_auto => {
-              if (index != this.step) return
-              is_auto === true && is_prev ? this.Prev() : this.Next()
-            })
+          Todo: () => {
+            try {
+              let result = todo(is_auto => this._Next(is_auto !== true || !this._is_forward))
 
-            if (result instanceof Promise)
-              result.catch(e => this.Reject(e, () => is_prev ? this.Prev() : this.Next()))
+              if (result instanceof Promise)
+                result.catch(e => {
+                  this._EmitError(e)
+                  is_tolerance && this._Next(this._is_forward)
+                })
+            } catch(e) {
+              this._EmitError(e)
+              is_tolerance && this._Next(this._is_forward)
+            }
           }
         }
 
-        this.step_list.push(step)
+        this._step_list.push(step)
 
         return {
           Exit: exit => step.Exit = exit
@@ -78,15 +87,24 @@ export default class {
   }
 
   Run() {
-    this.Catch(this.step_list[this.step = 0].Todo, () => this.Next())
+    this._is_forward = true
+    this._step_list[this.step = 0].Todo()
   }
 
-  $on(name, todo) {
-    this.event_hub[name] = this.event_hub[name] || []
-    this.event_hub[name].push(todo)
+  Prev() {
+    this._Next(false)
+  }
+
+  Next() {
+    this._Next(true)
+  }
+
+  $on(name, handle) {
+    this._event_hub[name] = this._event_hub[name] || []
+    this._event_hub[name].push(handle)
   }
 
   $emit(name, ...params) {
-    this.event_hub[name]?.forEach(todo => todo(...params))
+    this._event_hub[name]?.forEach(handle => handle(...params))
   }
 }
